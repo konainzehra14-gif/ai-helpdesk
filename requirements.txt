@@ -1,8 +1,9 @@
-fastapi
-uvicorn
-sentence-transformers
-faiss-cpu
-huggingface_hub
+fastapi==0.129.0
+uvicorn==0.41.0
+pymongo==4.16.0
+faiss-cpu==1.13.2
+sentence-transformers==5.2.3
+transformers==5.2.0
 numpy
 pandas
-pymongo
+huggingface_hub==1.4.1
