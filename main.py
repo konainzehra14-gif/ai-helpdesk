@@ -1,15 +1,17 @@
+# main.py
 # =========================================================
-# AI Helpdesk Retrieval Pipeline (Deployment-Ready, HF XET)
+# AI Helpdesk Retrieval Pipeline (Deployment-Ready)
 # =========================================================
 
 import os
 import pickle
 import faiss
 import numpy as np
-import pandas as pd
 from sentence_transformers import SentenceTransformer
 from pymongo import MongoClient
 from datetime import datetime, timezone
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
 from huggingface_hub import hf_hub_download
 
 # =========================================================
@@ -17,11 +19,9 @@ from huggingface_hub import hf_hub_download
 # =========================================================
 repo_id = "konainzehra/helpdesk-model"
 
-# Large binary files loaded directly from Hugging Face
 FAISS_PATH = hf_hub_download(repo_id=repo_id, filename="faiss_index.bin")
 DATA_PICKLE_PATH = hf_hub_download(repo_id=repo_id, filename="data.pkl")
 
-# Local model folder
 MODEL_PATH = "minilm-finetuned"
 
 # =========================================================
@@ -85,7 +85,7 @@ def helpdesk_pipeline(query, k=1, confidence_threshold=CONFIDENCE_THRESHOLD):
 
     # FAISS search
     D, I = index.search(query_vec, k)
-    if I[0][0] == -1:a
+    if I[0][0] == -1:
         answer = "Please visit the official website or contact HR department at (051) 5951821."
         store_log(query, answer, source="fallback")
         return answer
@@ -102,15 +102,28 @@ def helpdesk_pipeline(query, k=1, confidence_threshold=CONFIDENCE_THRESHOLD):
     return answer_text
 
 # =========================================================
-# 7️⃣ Interactive CLI
+# 7️⃣ FastAPI app
+# =========================================================
+app = FastAPI(title="Fauji Foundation AI Helpdesk")
+
+class QueryRequest(BaseModel):
+    question: str
+
+@app.get("/")
+def root():
+    return {"message": "Welcome to Fauji Foundation AI Helpdesk!"}
+
+@app.post("/ask")
+def ask_helpdesk(request: QueryRequest):
+    question = request.question.strip()
+    if not question:
+        raise HTTPException(status_code=400, detail="Question cannot be empty")
+    answer = helpdesk_pipeline(question)
+    return {"question": question, "answer": answer}
+
+# =========================================================
+# 8️⃣ Optional CLI for local testing
 # =========================================================
 if __name__ == "__main__":
-    print("🤖 AI Help Desk (type 'exit' to quit)\n")
-    while True:
-        user_query = input("Ask your question: ").strip()
-        if user_query.lower() in ["exit", "quit"]:
-            print("Goodbye 👋")
-            break
-        response = helpdesk_pipeline(user_query)
-        print("Answer:", response)
-        print("-" * 50)
+    import uvicorn
+    uvicorn.run("main:app", host="0.0.0.0", port=int(os.environ.get("PORT", 8000)), reload=True)
