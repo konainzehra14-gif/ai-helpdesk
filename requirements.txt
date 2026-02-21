@@ -1,4 +1,6 @@
 fastapi
 uvicorn
-requests
+faiss-cpu
+numpy
 pymongo
+requests
