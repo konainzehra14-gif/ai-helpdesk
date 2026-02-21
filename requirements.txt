@@ -1,7 +1,7 @@
-fastapi
-uvicorn
 sentence-transformers
 faiss-cpu
 numpy
 pandas
 pymongo
+huggingface-hub
+requests
