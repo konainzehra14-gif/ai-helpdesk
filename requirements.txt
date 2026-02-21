@@ -1,6 +1,8 @@
 fastapi
 uvicorn
+sentence-transformers
 faiss-cpu
-numpy
 pymongo
-requests
+numpy
+pandas
+huggingface_hub
