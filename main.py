@@ -1,129 +1,85 @@
-# main.py
 # =========================================================
-# AI Helpdesk Retrieval Pipeline (Deployment-Ready)
+# Lightweight HR Support Chatbot for Railway Deployment
 # =========================================================
 
-import os
-import pickle
-import faiss
 import numpy as np
+import pandas as pd
 from sentence_transformers import SentenceTransformer
-from pymongo import MongoClient
-from datetime import datetime, timezone
+from huggingface_hub import hf_hub_download
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from huggingface_hub import hf_hub_download
 
-# =========================================================
-# 1️⃣ Paths / Hugging Face downloads
-# =========================================================
-repo_id = "konainzehra/helpdesk-model"
+# -----------------------------
+# 1️⃣ Download Dataset + Model from Hugging Face
+# -----------------------------
+REPO_ID = "konainzehra/helpdesk-model"
 
-FAISS_PATH = hf_hub_download(repo_id=repo_id, filename="faiss_index.bin")
-DATA_PICKLE_PATH = hf_hub_download(repo_id=repo_id, filename="data.pkl")
+DATA_CSV_PATH = hf_hub_download(repo_id=REPO_ID, filename="hr_dataset_modified.csv")
+MODEL_PATH = hf_hub_download(repo_id=REPO_ID, filename="minilm-finetuned")
 
-MODEL_PATH = "minilm-finetuned"
+# -----------------------------
+# 2️⃣ Load Dataset & Model
+# -----------------------------
+df = pd.read_csv(DATA_CSV_PATH)  # Ensure CSV has columns: "question", "answer"
+questions = df['question'].tolist()
+answers = df['answer'].tolist()
 
-# =========================================================
-# 2️⃣ Load MiniLM embeddings
-# =========================================================
-embedding_model = SentenceTransformer(MODEL_PATH)
+embedding_model = SentenceTransformer(MODEL_PATH, trust_remote_code=True)
+question_embeddings = embedding_model.encode(questions, convert_to_numpy=True, show_progress_bar=True)
+question_embeddings = question_embeddings / np.linalg.norm(question_embeddings, axis=1, keepdims=True)
 
-# =========================================================
-# 3️⃣ Load FAISS index and dataset
-# =========================================================
-with open(DATA_PICKLE_PATH, "rb") as f:
-    data = pickle.load(f)
-questions = data["questions"]
-answers = data["answers"]
-
-index = faiss.read_index(FAISS_PATH)
-
-# =========================================================
-# 4️⃣ MongoDB Setup (optional)
-# =========================================================
-MONGO_URL = os.environ.get("MONGO_URL", "")
-if MONGO_URL:
-    client = MongoClient(MONGO_URL)
-    db = client["ai_helpdesk"]
-    collection = db["helpdesk_logs"]
-else:
-    collection = None
-
-def store_log(question, answer, source="ai_helpdesk"):
-    if collection:
-        collection.insert_one({
-            "question": question,
-            "answer": answer,
-            "source": source,
-            "timestamp": datetime.now(timezone.utc)
-        })
-
-# =========================================================
-# 5️⃣ Confidential Filter
-# =========================================================
+# -----------------------------
+# 3️⃣ Confidential Filter
+# -----------------------------
 CONFIDENTIAL_KEYWORDS = ["password", "salary", "bank", "ssn", "credit card", "confidential"]
 
 def is_confidential(query):
     return any(word in query.lower() for word in CONFIDENTIAL_KEYWORDS)
 
-# =========================================================
-# 6️⃣ Helpdesk Pipeline
-# =========================================================
+# -----------------------------
+# 4️⃣ Chatbot Pipeline
+# -----------------------------
 CONFIDENCE_THRESHOLD = 0.65
 
-def helpdesk_pipeline(query, k=1, confidence_threshold=CONFIDENCE_THRESHOLD):
-    # Confidential check
+def chatbot_pipeline(query):
     if is_confidential(query):
-        answer = "Access Restricted"
-        store_log(query, answer, source="confidential_block")
-        return answer
+        return "Access Restricted"
 
-    # Encode query
     query_vec = embedding_model.encode([query], convert_to_numpy=True)
     query_vec = query_vec / np.linalg.norm(query_vec, axis=1, keepdims=True)
 
-    # FAISS search
-    D, I = index.search(query_vec, k)
-    if I[0][0] == -1:
-        answer = "Please visit the official website or contact HR department at (051) 5951821."
-        store_log(query, answer, source="fallback")
-        return answer
+    similarities = (question_embeddings @ query_vec.T).flatten()
+    best_idx = np.argmax(similarities)
+    best_score = similarities[best_idx]
 
-    similarity = float(D[0][0])
-    answer_text = answers[I[0][0]]
+    if best_score < CONFIDENCE_THRESHOLD:
+        return "I am not confident about this answer. Please contact HR."
 
-    if similarity < confidence_threshold:
-        answer = "Please visit the official website or contact HR department at (051) 5951821."
-        store_log(query, answer, source="fallback")
-        return answer
+    return answers[best_idx]
 
-    store_log(query, answer_text, source="retrieval")
-    return answer_text
-
-# =========================================================
-# 7️⃣ FastAPI app
-# =========================================================
-app = FastAPI(title="Fauji Foundation AI Helpdesk")
+# -----------------------------
+# 5️⃣ FastAPI App
+# -----------------------------
+app = FastAPI(title="HR Support Chatbot")
 
 class QueryRequest(BaseModel):
     question: str
 
 @app.get("/")
 def root():
-    return {"message": "Welcome to Fauji Foundation AI Helpdesk!"}
+    return {"message": "Welcome to HR Support Chatbot!"}
 
 @app.post("/ask")
 def ask_helpdesk(request: QueryRequest):
     question = request.question.strip()
     if not question:
         raise HTTPException(status_code=400, detail="Question cannot be empty")
-    answer = helpdesk_pipeline(question)
+    answer = chatbot_pipeline(question)
     return {"question": question, "answer": answer}
 
-# =========================================================
-# 8️⃣ Optional CLI for local testing
-# =========================================================
+# -----------------------------
+# 6️⃣ Local Testing
+# -----------------------------
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=int(os.environ.get("PORT", 8000)), reload=True)
+    uvicorn.run("main:app", host="0.0.0.0", port=int(8000), reload=True)
