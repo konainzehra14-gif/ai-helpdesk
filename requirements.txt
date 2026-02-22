@@ -1,19 +1,5 @@
-# ===========================
-# Core Web Framework
-# ===========================
 fastapi>=0.95.2
 uvicorn>=0.22.1
 pydantic>=2.2.1
-
-# ===========================
-# Machine Learning / Embeddings
-# ===========================
 numpy>=1.26.0
-sentence-transformers>=2.2.2
-torch>=2.1.0
-transformers>=4.40.0
-
-# ===========================
-# Hugging Face
-# ===========================
-huggingface-hub>=1.24.1,<1.25.0
+huggingface-hub>=1.24.0,<1.25.0
